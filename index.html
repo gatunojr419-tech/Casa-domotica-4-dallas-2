@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>CASA DOMOTICA</title>
+  <style>
+    :root{
+      --bg:#0f1724; --panel:#0b1220; --accent:#6ee7b7; --danger:#ff6b6b; --warm:#ffb86b; --glass: rgba(255,255,255,0.03);
+      --card-radius:16px; --soft: 12px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    }
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#071021 0%, #081427 100%);color:#dde6f0}
+    .app{max-width:1200px;margin:20px auto;padding:20px;display:grid;grid-template-columns:1fr 380px;gap:18px}
+    header{grid-column:1/-1;display:flex;align-items:center;gap:16px}
+    h1{font-size:18px;margin:0}
+    .controls{margin-left:auto;display:flex;gap:10px;align-items:center}
+    .card{background:var(--panel);border-radius:var(--card-radius);padding:16px;box-shadow:0 6px 18px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.03)}
+
+    /* Dials */
+    .dials{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+    .dial{display:flex;flex-direction:column;align-items:center;padding:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px}
+    .dial h3{margin:6px 0 0;font-weight:600;font-size:14px}
+    .gauge{width:160px;height:120px;display:block}
+    .big{font-size:28px;font-weight:700}
+
+    .right{display:flex;flex-direction:column;gap:14px}
+    .btn{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.06);padding:10px 16px;border-radius:12px;color:inherit;cursor:pointer}
+    .btn.primary{background:linear-gradient(90deg,#0ea5a5,#06b6d4);color:#021018}
+    .switch{display:inline-flex;align-items:center;gap:8px}
+
+    .actuators{display:flex;gap:10px}
+    .actuators .btn{flex:1}
+
+    .graph{height:160px;border-radius:12px;padding:8px;background:var(--glass);overflow:hidden}
+    .alert-border{box-shadow:0 0 0 4px transparent inset;transition:box-shadow .4s ease}
+    .alert-cold{box-shadow:0 0 0 6px rgba(59,130,246,0.25) inset}
+    .alert-hot{box-shadow:0 0 0 6px rgba(234,88,12,0.22) inset}
+
+    .status{font-size:13px;opacity:.9}
+    .row{display:flex;gap:12px;align-items:center}
+    .muted{opacity:.7;font-size:13px}
+    footer{grid-column:1/-1;text-align:center;opacity:.6;margin-top:8px;font-size:13px}
+
+    .needle{transition:transform 700ms cubic-bezier(.22,.9,.3,1)}
+
+    @media(max-width:900px){
+      .app{grid-template-columns:1fr;}
+      .gauge{width:120px;height:90px}
+    }
+  </style>
+</head>
+<body>
+  <div class="app card alert-border" id="root">
+    <header>
+      <h1>CASA DOMOTICA — 4 sensores Dallas (DS18B20)</h1>
+      <div class="controls">
+        <div class="status" id="btStatus">Bluetooth: desconectado</div>
+        <button class="btn" id="btnConnect">Conectar ESP32 (BLE)</button>
+        <label class="switch muted">Modo:
+          <select id="modeSelect" class="btn" style="padding:6px 8px;border-radius:10px;min-width:120px">
+            <option value="auto">Automático</option>
+            <option value="manual">Manual</option>
+          </select>
+        </label>
+      </div>
+    </header>
+
+    <section style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;gap:12px">
+        <div style="flex:1" class="card">
+          <div style="display:flex;gap:12px;align-items:center">
+            <div style="flex:1">
+              <div class="dials" id="dialsContainer"></div>
+
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px" id="tempCards">
+                <div class="card" style="text-align:center;padding:14px 8px;background:rgba(255,255,255,0.04)">
+                  <div class="muted">Sensor 1</div><div style="font-size:26px;font-weight:700;color:#6ee7b7" id="card-t1">-- °C</div>
+                </div>
+                <div class="card" style="text-align:center;padding:14px 8px;background:rgba(255,255,255,0.04)">
+                  <div class="muted">Sensor 2</div><div style="font-size:26px;font-weight:700;color:#38bdf8" id="card-t2">-- °C</div>
+                </div>
+                <div class="card" style="text-align:center;padding:14px 8px;background:rgba(255,255,255,0.04)">
+                  <div class="muted">Sensor 3</div><div style="font-size:26px;font-weight:700;color:#facc15" id="card-t3">-- °C</div>
+                </div>
+                <div class="card" style="text-align:center;padding:14px 8px;background:rgba(255,255,255,0.04)">
+                  <div class="muted">Sensor 4</div><div style="font-size:26px;font-weight:700;color:#fb7185" id="card-t4">-- °C</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="width:220px" class="card" id="avgCard">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+                <div class="muted">Temperatura promedio</div>
+                <div class="big" id="avgTemp">-- °C</div>
+                <div class="muted">Últimas 20 muestras</div>
+                <canvas id="avgGraph" class="graph" width="200" height="120"></canvas>
+                <div class="row" style="width:100%;justify-content:space-between">
+                  <div class="muted">Ventilador: <strong id="fanState">OFF</strong></div>
+                  <div class="muted">Calefactor: <strong id="heaterState">OFF</strong></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="right">
+          <div class="card">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div class="muted">Actuadores</div>
+              <div class="actuators">
+                <button class="btn" id="fanOn">Encender Ventilador</button>
+                <button class="btn" id="fanOff">Apagar Ventilador</button>
+              </div>
+              <div class="actuators">
+                <button class="btn" id="heaterOn">Encender Calefactor</button>
+                <button class="btn" id="heaterOff">Apagar Calefactor</button>
+              </div>
+              <div class="muted">Modo actual: <strong id="currentMode">Automático</strong></div>
+              <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+                <button class="btn primary" id="btnReqSample">Pedir muestra (manual)</button>
+                <div class="muted">Última lectura: <span id="lastTime">--</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="muted">Gráficas individuales (últimas 20 muestras)</div>
+            <canvas id="g1" class="graph" width="320" height="120" style="margin-top:8px"></canvas>
+            <canvas id="g2" class="graph" width="320" height="120" style="margin-top:8px"></canvas>
+          </div>
+        </aside>
+      </div>
+
+      <div class="card" style="grid-column:1/-1">
+        <div class="muted">Notas de funcionamiento</div>
+        <ul>
+          <li>Modo automático: ventilador ON si promedio > 25 °C; calefactor ON si &lt; 20 °C.</li>
+          <li>Modo manual: control total de actuadores.</li>
+          <li>JSON esperado del ESP32: <code>{"t1":23.4,"t2":22.9,"t3":23.1,"t4":22.8}</code></li>
+        </ul>
+      </div>
+    </section>
+
+    <footer>Dashboard creado para ESP32 + 4x DS18B20 — muestra y controla por Bluetooth</footer>
+  </div>
+
+  <script>
+    /* -------------------- Simple Gauge rendering -------------------- */
+    function makeDial(id,title){
+      const div = document.createElement('div');
+      div.className='dial card';
+      div.innerHTML=`
+        <svg class="gauge" viewBox="0 0 160 120" id="gauge-${id}">
+          <defs>
+            <linearGradient id="ggrad-${id}" x1="0" x2="1">
+              <stop offset="0%" stop-color="#6ee7b7"/>
+              <stop offset="100%" stop-color="#38bdf8"/>
+            </linearGradient>
+          </defs>
+          <path d="M20 100 A60 60 0 0 1 140 100" stroke="#173443" stroke-width="18" fill="none" stroke-linecap="round"></path>
+          <path d="M20 100 A60 60 0 0 1 140 100" stroke="url(#ggrad-${id})" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="0 999" id="arc-${id}"></path>
+          <g transform="translate(80,100)">
+            <line x1="0" y1="0" x2="0" y2="-60" stroke="#fff" stroke-width="2" class="needle" id="needle-${id}" style="transform-origin:0px 0px"></line>
+            <circle cx="0" cy="0" r="4" fill="#fff"></circle>
+          </g>
+          <text x="80" y="72" text-anchor="middle" font-size="15" fill="#cfeff0" id="val-${id}">-- °C</text>
+        </svg>
+        <h3>${title}</h3>
+      `;
+      return div;
+    }
+
+    const dialsContainer = document.getElementById('dialsContainer');
+    const names=['Garaje','Patio','Sala','Comedor'];
+    for(let i=1;i<=4;i++){ dialsContainer.appendChild(makeDial(i, names[i-1])); }
+
+    const state = {
+      t:[null,null,null,null],
+      history: [[],[],[],[]],
+      avgHistory: [],
+      fan:false, heater:false,
+      mode:'auto',
+      connected:false
+    };
+
+    function tempToAngle(t){
+      const min=-40,max=60;
+      const clamped=Math.max(min,Math.min(max,t));
+      return ((clamped-min)/(max-min))*180-90;
+    }
+
+    function updateDial(i,val){
+      const arc=document.getElementById('arc-'+i);
+      const needle=document.getElementById('needle-'+i);
+      const txt=document.getElementById('val-'+i);
+      if(!arc||!needle||!txt) return;
+
+      const pct=Math.max(0,Math.min(1,(val+40)/100));
+      arc.setAttribute('stroke-dasharray', (pct*380).toFixed(1)+' 999');
+
+      needle.style.transform=`rotate(${tempToAngle(val)}deg)`;
+      txt.textContent=val.toFixed(1)+' °C';
+    }
+
+    function computeAvg(){
+      const vals=state.t.filter(v=>typeof v==='number');
+      return vals.length? vals.reduce((a,b)=>a+b,0)/vals.length : NaN;
+    }
+
+    function updateAvgUI(){
+      const avg=computeAvg();
+      document.getElementById('avgTemp').textContent=isNaN(avg)?'-- °C':avg.toFixed(2)+' °C';
+      document.getElementById('fanState').textContent=state.fan?'ON':'OFF';
+      document.getElementById('heaterState').textContent=state.heater?'ON':'OFF';
+      document.getElementById('lastTime').textContent=new Date().toLocaleTimeString();
+      updateGraphs();
+
+      const root=document.getElementById('root');
+      root.classList.remove('alert-cold','alert-hot');
+      if(!isNaN(avg)){
+        if(avg>25) root.classList.add('alert-hot');
+        else if(avg<20) root.classList.add('alert-cold');
+      }
+    }
+
+    function updateGraphs(){
+      function draw(ctx, arrays){
+        const W=ctx.canvas.width, H=ctx.canvas.height;
+        ctx.clearRect(0,0,W,H);
+        ctx.lineWidth=2;
+
+        let all=arrays.flat().filter(x=>typeof x==='number');
+        let min=all.length?Math.min(...all):0;
+        let max=all.length?Math.max(...all):30;
+        if(min===max) max=min+10;
+
+        arrays.forEach(arr=>{
+          ctx.beginPath();
+          const display=arr.slice(-20);
+          for(let i=0;i<20;i++){
+            const x=(i/19)*W;
+            const v=display[i]!==undefined?display[i]:NaN;
+            const y=isNaN(v)?H: H-( (v-min)/(max-min) )*H;
+            if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+          }
+          ctx.stroke();
+        });
+      }
+
+      draw(document.getElementById('g1').getContext('2d'), [state.history[0],state.history[1]]);
+      draw(document.getElementById('g2').getContext('2d'), [state.history[2],state.history[3]]);
+      draw(document.getElementById('avgGraph').getContext('2d'), [state.avgHistory]);
+    }
+
+    function pushSample(tarr){
+      for(let i=0;i<4;i++){
+        if(typeof tarr[i]==='number'){
+          state.t[i]=tarr[i];
+          state.history[i].push(tarr[i]);
+          if(state.history[i].length>60) state.history[i].shift();
+          updateDial(i+1,tarr[i]);
+          document.getElementById('card-t'+(i+1)).textContent=tarr[i].toFixed(1)+' °C';
+        }
+      }
+
+      const avg=computeAvg();
+      if(!isNaN(avg)){
+        state.avgHistory.push(avg);
+        if(state.avgHistory.length>60) state.avgHistory.shift();
+      }
+
+      updateAvgUI();
+      applyAutoRules();
+    }
+
+    /* --------- Actuadores ---------- */
+    function sendCommand(cmd){
+      if(window.bleWriter){
+        const enc=new TextEncoder();
+        window.bleWriter.writeValue(enc.encode(cmd+"\n")).catch(console.error);
+      }
+    }
+
+    fanOn.onclick=()=>{state.fan=true;sendCommand("FAN:ON");updateAvgUI();}
+    fanOff.onclick=()=>{state.fan=false;sendCommand("FAN:OFF");updateAvgUI();}
+    heaterOn.onclick=()=>{state.heater=true;sendCommand("HEATER:ON");updateAvgUI();}
+    heaterOff.onclick=()=>{state.heater=false;sendCommand("HEATER:OFF");updateAvgUI();}
+
+    modeSelect.onchange=e=>{
+      state.mode=e.target.value;
+      currentMode.textContent=state.mode==="auto"?"Automático":"Manual";
+    };
+
+    btnReqSample.onclick=()=>sendCommand("REQ_SAMPLE");
+
+    function applyAutoRules(){
+      if(state.mode!=='auto') return;
+      const avg=computeAvg();
+      if(isNaN(avg)) return;
+
+      if(avg>25){
+        if(!state.fan){ state.fan=true; sendCommand("FAN:ON"); }
+        if(state.heater){ state.heater=false; sendCommand("HEATER:OFF"); }
+      }
+      else if(avg<20){
+        if(!state.heater){ state.heater=true; sendCommand("HEATER:ON"); }
+        if(state.fan){ state.fan=false; sendCommand("FAN:OFF"); }
+      }
+      else{
+        if(state.fan){ state.fan=false; sendCommand("FAN:OFF"); }
+        if(state.heater){ state.heater=false; sendCommand("HEATER:OFF"); }
+      }
+
+      updateAvgUI();
+    }
+
+    /* --------- Bluetooth ---------- */
+    async function connectBluetooth(){
+      try{
+        const device=await navigator.bluetooth.requestDevice({
+          acceptAllDevices:true,
+          optionalServices:['6e400001-b5a3-f393-e0a9-e50e24dcca9e']
+        });
+
+        btStatus.textContent="Bluetooth: conectando...";
+        const server=await device.gatt.connect();
+        const service=await server.getPrimaryService('6e400001-b5a3-f393-e0a9-e50e24dcca9e');
+        const tx=await service.getCharacteristic('6e400002-b5a3-f393-e0a9-e50e24dcca9e');
+        const rx=await service.getCharacteristic('6e400003-b5a3-f393-e0a9-e50e24dcca9e');
+        window.bleWriter=tx;
+
+        await rx.startNotifications();
+        rx.addEventListener("characteristicvaluechanged", evt=>{
+          let raw=new TextDecoder().decode(evt.target.value);
+          let parts=raw.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+          for(const p of parts){
+            try{
+              if(p.startsWith("{")){
+                const o=JSON.parse(p);
+                pushSample([o.t1,o.t2,o.t3,o.t4].map(parseFloat));
+              }else if(p.includes(",")){
+                const arr=p.split(",").map(parseFloat);
+                if(arr.length>=4) pushSample(arr.slice(0,4));
+              }
+            }catch{}
+          }
+        });
+
+        btStatus.textContent="Bluetooth: conectado — "+(device.name||device.id);
+        state.connected=true;
+      }catch(e){
+        btStatus.textContent="Bluetooth: error ("+e.message+")";
+      }
+    }
+
+    btnConnect.onclick=()=>{
+      if(!navigator.bluetooth) return alert("Tu navegador no soporta Web Bluetooth.");
+      connectBluetooth();
+    };
+
+    /* -------- DEMO -------- */
+    setInterval(()=>{
+      if(state.connected) return;
+      const base = 22 + Math.sin(Date.now()/30000)*3;
+      pushSample([
+        base+(Math.random()*1),
+        base+0.3+(Math.random()*1),
+        base-0.5+(Math.random()*1),
+        base+0.6+(Math.random()*1),
+      ].map(v=>parseFloat(v.toFixed(2))));
+    },3000);
+
+    updateGraphs();
+    window._state=state;
+  </script>
+</body>
+</html>
